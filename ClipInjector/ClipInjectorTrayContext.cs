@@ -196,12 +196,13 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
 
             string normalized = raw.Replace("\r\n", "\n").Replace("\r", "\n");
 
-            IReadOnlyList<ushort> modifiers = CaptureModifierState();
+            IReadOnlyList<ushort> pressedModifiers = CaptureModifierState();
+            IReadOnlyList<ushort> releasePlan = BuildReleasePlan(pressedModifiers);
             bool modifiersReleased = false;
 
             try
             {
-                modifiersReleased = ReleaseModifiers(modifiers);
+                modifiersReleased = ReleaseModifiers(releasePlan);
                 if (!modifiersReleased)
                 {
                     return;
@@ -218,7 +219,7 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
             {
                 if (modifiersReleased)
                 {
-                    RestoreModifiers(modifiers);
+                    RestoreModifiers(pressedModifiers);
                 }
             }
         }
@@ -253,6 +254,32 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
         }
 
         return pressed;
+    }
+
+    private IReadOnlyList<ushort> BuildReleasePlan(IReadOnlyList<ushort> pressedModifiers)
+    {
+        var releasePlan = new List<ushort>(pressedModifiers.Count + 2);
+        var seen = new HashSet<ushort>();
+
+        foreach (ushort vk in pressedModifiers)
+        {
+            if (seen.Add(vk))
+            {
+                releasePlan.Add(vk);
+            }
+        }
+
+        if (seen.Add(VK_CONTROL))
+        {
+            releasePlan.Add(VK_CONTROL);
+        }
+
+        if (seen.Add(VK_MENU))
+        {
+            releasePlan.Add(VK_MENU);
+        }
+
+        return releasePlan;
     }
 
     private static bool IsKeyPressed(ushort vk)
