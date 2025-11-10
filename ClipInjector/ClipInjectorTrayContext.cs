@@ -195,12 +195,20 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
 
             string normalized = raw.Replace("\r\n", "\n").Replace("\r", "\n");
 
-            ReleaseModifiers();
+            IReadOnlyList<ushort> modifiers = CaptureModifierState();
+            ReleaseModifiers(modifiers);
             Thread.Sleep(25);
 
-            if (!SendUnicodeString(normalized))
+            try
             {
-                SendAsciiFallback(normalized);
+                if (!SendUnicodeString(normalized))
+                {
+                    SendAsciiFallback(normalized);
+                }
+            }
+            finally
+            {
+                RestoreModifiers(modifiers);
             }
         }
         catch
@@ -209,20 +217,68 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
         }
     }
 
-    private void ReleaseModifiers()
+    private IReadOnlyList<ushort> CaptureModifierState()
     {
-        var ups = new List<INPUT>
-        {
-            MakeVk(VK_CONTROL, true),
-            MakeVk(VK_MENU, true),
-            MakeVk(VK_SHIFT, true),
-            MakeVk(VK_LWIN, true)
-        };
+        var pressed = new List<ushort>(4);
 
-        if (ups.Count > 0)
+        if (IsKeyPressed(VK_CONTROL))
         {
-            SendInput((uint)ups.Count, ups.ToArray(), Marshal.SizeOf<INPUT>());
+            pressed.Add(VK_CONTROL);
         }
+
+        if (IsKeyPressed(VK_MENU))
+        {
+            pressed.Add(VK_MENU);
+        }
+
+        if (IsKeyPressed(VK_SHIFT))
+        {
+            pressed.Add(VK_SHIFT);
+        }
+
+        if (IsKeyPressed(VK_LWIN))
+        {
+            pressed.Add(VK_LWIN);
+        }
+
+        return pressed;
+    }
+
+    private static bool IsKeyPressed(ushort vk)
+    {
+        return (GetAsyncKeyState(vk) & 0x8000) != 0;
+    }
+
+    private void ReleaseModifiers(IReadOnlyList<ushort> modifiers)
+    {
+        if (modifiers.Count == 0)
+        {
+            return;
+        }
+
+        var inputs = new List<INPUT>(modifiers.Count);
+        foreach (ushort vk in modifiers)
+        {
+            inputs.Add(MakeVk(vk, true));
+        }
+
+        SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
+    }
+
+    private void RestoreModifiers(IReadOnlyList<ushort> modifiers)
+    {
+        if (modifiers.Count == 0)
+        {
+            return;
+        }
+
+        var inputs = new List<INPUT>(modifiers.Count);
+        foreach (ushort vk in modifiers)
+        {
+            inputs.Add(MakeVk(vk, false));
+        }
+
+        SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
     }
 
     private bool SendUnicodeString(string text)
@@ -418,6 +474,9 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
 
     [DllImport("user32.dll")]
     private static extern short VkKeyScanEx(char ch, IntPtr dwhkl);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
