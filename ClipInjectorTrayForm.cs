@@ -1,8 +1,8 @@
 namespace ClipInjector
 {
-    public partial class Form1 : Form
+    public partial class ClipInjectorTrayForm : Form
     {
-        public Form1()
+        public ClipInjectorTrayForm()
         {
             InitializeComponent();
         }
