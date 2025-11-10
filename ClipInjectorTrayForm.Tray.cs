@@ -1,16 +1,13 @@
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 namespace ClipInjector
 {
-    public partial class Form1 : Form
+    public partial class ClipInjectorTrayForm : Form
     {
         private const int HOTKEY_ID = 1;
         private const int WM_HOTKEY = 0x0312;
         private const uint MOD_ALT = 0x0001;
         private const uint MOD_CONTROL = 0x0002;
-        private const uint MOD_SHIFT = 0x0004;
-        private const uint MOD_WIN = 0x0008;
 
         // SendInput flags
         private const uint KEYEVENTF_KEYUP = 0x0002;
@@ -33,30 +30,21 @@ namespace ClipInjector
             WindowState = FormWindowState.Minimized;
             Opacity = 0;
             InitializeTrayIcon();
-            TryRegisterHotkeys();
+            RegisterHotkey();
         }
 
-        private void TryRegisterHotkeys()
+        private void RegisterHotkey()
         {
-            // Preferred order: Win+Shift+V, then Ctrl+Alt+Shift+V, Ctrl+Shift+V, Ctrl+Alt+V
-            var attempts = new (uint mods, string desc)[]
+            const uint modifiers = MOD_CONTROL | MOD_ALT;
+            if (RegisterHotKey(Handle, HOTKEY_ID, modifiers, (uint)Keys.V))
             {
-                (MOD_WIN | MOD_SHIFT, "Win+Shift+V"),
-                (MOD_CONTROL | MOD_ALT | MOD_SHIFT, "Ctrl+Alt+Shift+V"),
-                (MOD_CONTROL | MOD_SHIFT, "Ctrl+Shift+V"),
-                (MOD_CONTROL | MOD_ALT, "Ctrl+Alt+V")
-            };
-            foreach (var a in attempts)
-            {
-                if (RegisterHotKey(Handle, HOTKEY_ID, a.mods, (uint)Keys.V))
-                {
-                    _activeHotkeyDescription = a.desc;
-                    ShowBalloon("ClipInjector", $"Ready ({_activeHotkeyDescription})");
-                    return;
-                }
+                _activeHotkeyDescription = "Ctrl+Alt+V";
+                ShowBalloon("ClipInjector", $"Ready ({_activeHotkeyDescription})");
+                return;
             }
+
             _activeHotkeyDescription = "<none>";
-            ShowBalloon("ClipInjector", "Failed to register any hotkey");
+            ShowBalloon("ClipInjector", "Failed to register Ctrl+Alt+V hotkey");
         }
 
         protected override void OnHandleDestroyed(EventArgs e)
@@ -149,9 +137,8 @@ namespace ClipInjector
             if (sent != inputs.Count)
             {
                 int err = Marshal.GetLastWin32Error();
-                ShowBalloon("ClipInjector", $"Unicode send partial ({sent}/{inputs.Count}), err {err}.");
                 string errorMessage = new Win32Exception(err).Message;
-                Debug.WriteLine(errorMessage);
+                ShowBalloon("ClipInjector", $"Unicode send partial ({sent}/{inputs.Count}): {errorMessage} (0x{err:X}).");
                 return false;
             }
             return true;
@@ -205,9 +192,8 @@ namespace ClipInjector
             if (sent != inputs.Count)
             {
                 int err = Marshal.GetLastWin32Error();
-                ShowBalloon("ClipInjector", $"ASCII fallback partial ({sent}/{inputs.Count}), err {err}.");
                 string errorMessage = new Win32Exception(err).Message;
-                Debug.WriteLine(errorMessage);
+                ShowBalloon("ClipInjector", $"ASCII fallback partial ({sent}/{inputs.Count}): {errorMessage} (0x{err:X}).");
                 return false;
             }
             return true;
