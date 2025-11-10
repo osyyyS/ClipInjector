@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -196,11 +197,18 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
             string normalized = raw.Replace("\r\n", "\n").Replace("\r", "\n");
 
             IReadOnlyList<ushort> modifiers = CaptureModifierState();
-            ReleaseModifiers(modifiers);
-            Thread.Sleep(25);
+            bool modifiersReleased = false;
 
             try
             {
+                modifiersReleased = ReleaseModifiers(modifiers);
+                if (!modifiersReleased)
+                {
+                    return;
+                }
+
+                Thread.Sleep(25);
+
                 if (!SendUnicodeString(normalized))
                 {
                     SendAsciiFallback(normalized);
@@ -208,7 +216,10 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
             }
             finally
             {
-                RestoreModifiers(modifiers);
+                if (modifiersReleased)
+                {
+                    RestoreModifiers(modifiers);
+                }
             }
         }
         catch
@@ -249,11 +260,11 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
         return (GetAsyncKeyState(vk) & 0x8000) != 0;
     }
 
-    private void ReleaseModifiers(IReadOnlyList<ushort> modifiers)
+    private bool ReleaseModifiers(IReadOnlyList<ushort> modifiers)
     {
         if (modifiers.Count == 0)
         {
-            return;
+            return true;
         }
 
         var inputs = new List<INPUT>(modifiers.Count);
@@ -263,6 +274,7 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
         }
 
         SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
+        return WaitForModifiersReleased(modifiers);
     }
 
     private void RestoreModifiers(IReadOnlyList<ushort> modifiers)
@@ -279,6 +291,45 @@ internal sealed class ClipInjectorTrayContext : ApplicationContext
         }
 
         SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
+    }
+
+    private bool WaitForModifiersReleased(IReadOnlyList<ushort> modifiers)
+    {
+        if (modifiers.Count == 0)
+        {
+            return true;
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.ElapsedMilliseconds < 200)
+        {
+            bool anyPressed = false;
+            foreach (ushort vk in modifiers)
+            {
+                if (IsKeyPressed(vk))
+                {
+                    anyPressed = true;
+                    break;
+                }
+            }
+
+            if (!anyPressed)
+            {
+                return true;
+            }
+
+            Thread.Sleep(5);
+        }
+
+        foreach (ushort vk in modifiers)
+        {
+            if (IsKeyPressed(vk))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private bool SendUnicodeString(string text)
